@@ -29,18 +29,28 @@
 uint8_t PopCnt16[1 << 16];
 uint8_t SquareDistance[SQUARE_NB][SQUARE_NB];
 
+// added from Musketeer-Stockfish
+Bitboard FileBB[FILE_NB];
+Bitboard RankBB[RANK_NB];
+//
+  
 Bitboard SquareBB[SQUARE_NB];
 Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 Bitboard PseudoAttacks[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
 Bitboard PseudoMoves[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
 Bitboard LeaperAttacks[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
 Bitboard LeaperMoves[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
+
 Bitboard BoardSizeBB[FILE_NB][RANK_NB];
 RiderType AttackRiderTypes[PIECE_TYPE_NB];
 RiderType MoveRiderTypes[PIECE_TYPE_NB];
 
+
 Magic RookMagicsH[SQUARE_NB];
 Magic RookMagicsV[SQUARE_NB];
+
+// in Musketeer-Stockfish RookMagics[SQUARE_NB]
+
 Magic BishopMagics[SQUARE_NB];
 Magic CannonMagicsH[SQUARE_NB];
 Magic CannonMagicsV[SQUARE_NB];
@@ -75,7 +85,26 @@ namespace {
 #else
   void init_magics(Bitboard table[], Magic magics[], std::vector<Direction> directions);
 #endif
+  
+  // Added from Musketeer-Stockfish
+  // popcount16() counts the non-zero bits using SWAR-Popcount algorithm
 
+
+
+  unsigned popcount16(unsigned u) {
+
+    u -= (u >> 1) & 0x5555U;
+
+    u = ((u >> 2) & 0x3333U) + (u & 0x3333U);
+
+    u = ((u >> 4) + u) & 0x0F0FU;
+
+    return (u * 0x0101U) >> 8;
+
+  }
+  // End added code from Musketeer-Stockfish
+
+    
   template <MovementType MT>
   Bitboard sliding_attack(std::vector<Direction> directions, Square sq, Bitboard occupied, Color c = WHITE) {
     assert(MT != LAME_LEAPER);
@@ -105,6 +134,7 @@ namespace {
     return attack;
   }
 
+
   Bitboard lame_leaper_path(Direction d, Square s) {
     Direction dr = d > 0 ? NORTH : SOUTH;
     Direction df = (std::abs(d % NORTH) < NORTH / 2 ? d % NORTH : -(d % NORTH)) < 0 ? WEST : EAST;
@@ -127,6 +157,8 @@ namespace {
     }
     return b;
   }
+  
+  
 
   Bitboard lame_leaper_path(std::vector<Direction> directions, Square s) {
     Bitboard b = 0;
@@ -134,6 +166,8 @@ namespace {
         b |= lame_leaper_path(d, s);
     return b;
   }
+  
+  
 
   Bitboard lame_leaper_attack(std::vector<Direction> directions, Square s, Bitboard occupied) {
     Bitboard b = 0;
@@ -148,6 +182,48 @@ namespace {
 }
 
 
+// Code from Fairy
+
+  Bitboard sliding_attack(Direction directions[], Square sq, Bitboard occupied, int max_dist = 7) {
+
+
+
+    Bitboard attack = 0;
+
+
+
+    for (int i = 0; directions[i]; ++i)
+
+        for (Square s = sq + directions[i];
+
+             is_ok(s) && distance(s, s - directions[i]) == 1 && distance(s, sq) <= max_dist;
+
+             s += directions[i])
+
+        {
+
+            attack |= s;
+
+
+
+            if (occupied & s)
+
+                break;
+
+        }
+
+
+
+    return attack;
+
+  }
+
+}
+
+// End code from fairy
+  
+  
+
 /// Bitboards::pretty() returns an ASCII representation of a bitboard suitable
 /// to be printed to standard output. Useful for debugging.
 
@@ -156,8 +232,14 @@ const std::string Bitboards::pretty(Bitboard b) {
   std::string s = "+---+---+---+---+---+---+---+---+---+---+---+---+\n";
 
   for (Rank r = RANK_MAX; r >= RANK_1; --r)
+    
+    // Rank r = RANK_8 'for Musketeer Chess'
+    
   {
       for (File f = FILE_A; f <= FILE_MAX; ++f)
+        
+    //       for (File f = FILE_A; f <= FILE_H; ++f) 'for Musketeer Chess'
+     
           s += b & make_square(f, r) ? "| X " : "|   ";
 
       s += "|\n+---+---+---+---+---+---+---+---+---+---+---+---+\n";
@@ -171,6 +253,7 @@ const std::string Bitboards::pretty(Bitboard b) {
 /// startup and relies on global objects to be already zero-initialized.
 
 void Bitboards::init() {
+  // Beginning of code added in Fairy-Stockfish
 
   // Initialize rider types
   for (PieceType pt = PAWN; pt <= KING; ++pt)
@@ -229,21 +312,52 @@ void Bitboards::init() {
               MoveRiderTypes[pt] |= RIDER_CANNON_V;
       }
   }
-
+  
+  // End Code Added in Fairy-Stockfish
+  
+  // Musketeer
   for (unsigned i = 0; i < (1 << 16); ++i)
-      PopCnt16[i] = std::bitset<16>(i).count();
+      PopCnt16[i] = (uint8_t) popcount16(i);
 
-  for (Square s = SQ_A1; s <= SQ_MAX; ++s)
+  for (Square s = SQ_A1; s <= SQ_MAX; ++s)   // s <= SQ_H8 in Musketeer
       SquareBB[s] = make_bitboard(s);
 
-  for (File f = FILE_A; f <= FILE_MAX; ++f)
-      for (Rank r = RANK_1; r <= RANK_MAX; ++r)
+  for (File f = FILE_A; f <= FILE_MAX; ++f)  // f <= FILE_H8 in Musketeer
+  // Musketeer       FileBB[f] = f > FILE_A ? FileBB[f - 1] << 1 : FileABB;
+  // Fairy Code, remember that Fairy wasn't programmed for Musketeer but for Drop pieces like in Seirawan. 
+  //Size of the Board is also different, as Fairy supports bigger boards than 8x8
+    
+    for (Rank r = RANK_1; r <= RANK_MAX; ++r)
           BoardSizeBB[f][r] = forward_file_bb(BLACK, make_square(f, r)) | SquareBB[make_square(f, r)] | (f > FILE_A ? BoardSizeBB[f - 1][r] : Bitboard(0));
 
-  for (Square s1 = SQ_A1; s1 <= SQ_MAX; ++s1)
-      for (Square s2 = SQ_A1; s2 <= SQ_MAX; ++s2)
-              SquareDistance[s1][s2] = std::max(distance<File>(s1, s2), distance<Rank>(s1, s2));
+  // Musketeer for (Rank r = RANK_1; r <= RANK_8; ++r)
+  // Musketeer    RankBB[r] = r > RANK_1 ? RankBB[r - 1] << 8 : Rank1BB;
 
+  for (Square s1 = SQ_A1; s1 <= SQ_MAX; ++s1)  // Musketeer s1 <= SQ_H8
+      for (Square s2 = SQ_A1; s2 <= SQ_MAX; ++s2)  // Musketeer s2 <= SQ_H8
+  // Fairy in Musketeer it's 3 code lines beginning if (s1 = !s2)            SquareDistance[s1][s2] = std::max(distance<File>(s1, s2), distance<Rank>(s1, s2));
+          if (s1 != s2)  // Musketeer
+          {              // Musketeer
+              SquareDistance[s1][s2] = std::max(distance<File>(s1, s2), distance<Rank>(s1, s2));  // Musketeer
+              DistanceRingBB[s1][SquareDistance[s1][s2] - 1] |= s2;                               // Musketeer
+          }                                                                                       // Musketeer
+  
+  for (Color c = WHITE; c <= BLACK; ++c)     // Musketeer
+      for (Square s = SQ_A1; s <= SQ_MAX; ++s) // Musketeer Code normally s <= SQ_H8
+          {
+          ForwardFileBB [c][s] = ForwardRanksBB[c][rank_of(s)] & FileBB[file_of(s)];
+          PawnAttackSpan[c][s] = ForwardRanksBB[c][rank_of(s)] & AdjacentFilesBB[file_of(s)];
+          PassedPawnMask[c][s] = ForwardFileBB [c][s] | PawnAttackSpan[c][s];
+          }                                  // End Added Musketeer Code
+
+  
+  
+  
+  
+  
+  
+  
+ 
   // Piece moves
   std::vector<Direction> RookDirectionsV = { NORTH, SOUTH};
   std::vector<Direction> RookDirectionsH = { EAST, WEST };
@@ -314,6 +428,212 @@ void Bitboards::init() {
                   LineBB[s1][s2] = (attacks_bb(WHITE, pt, s1, 0) & attacks_bb(WHITE, pt, s2, 0)) | s1 | s2;
   }
 }
+
+
+
+
+// Musketeer Piece Moves
+ Direction RookDirections[5] = { NORTH,  EAST,  SOUTH,  WEST };
+
+ Direction BishopDirections[5] = { NORTH_EAST, SOUTH_EAST, SOUTH_WEST, NORTH_WEST };
+
+ init_magics(RookTable, RookMagics, RookDirections);
+
+ init_magics(BishopTable, BishopMagics, BishopDirections);
+
+
+
+  int steps[][17] = {
+
+    {}, // NO_PIECE_TYPE
+
+    { 7, 9 }, // Pawn
+
+    { -17, -15, -10, -6, 6, 10, 15, 17 }, // Knight
+
+    {}, // Bishop
+
+    {}, // Rook
+
+    {}, // Queen
+
+    { -16, -10, -9, -8, -7, -6, -2, -1,
+
+       16,  10,  9,  8,  7,  6,  2,  1 }, // Cannon
+
+    { -17, -15, -10, -6, 6, 10, 15, 17 }, // Leopard
+
+    { -17, -15, -10, -6, 6, 10, 15, 17 }, // Archbishop
+
+    { -17, -15, -10, -6, 6, 10, 15, 17 }, // Chancellor
+
+    { -17, -16, -15, -10, -6, -2,
+
+       17,  16,  15,  10,  6,  2 }, // Spider
+
+    { -17, -15, -10, -6, 6, 10, 15, 17 }, // Dragon
+
+    { -25, -23, -17, -15, -11, -10, -6, -5,
+
+       25,  23,  17,  15,  11,  10,  6,  5}, // Unicorn
+
+    { -27, -24, -21, -18, -16, -14, -3, -2,
+
+       27,  24,  21,  18,  16,  14,  3,  2 }, // Hawk
+
+    { -18, -16, -14, -9, -8, -7, -2, -1,
+
+       18,  16,  14,  9,  8,  7,  2,  1 }, // Elephant
+
+    { -17, -16, -15, -2,
+
+       17,  16,  15,  2 }, // Fortress
+
+    { -9, -8, -7, -1, 1, 7, 8, 9 } // King
+
+  };
+
+  Direction slider[][9] = {
+
+    {}, // NO_PIECE_TYPE
+
+    {}, // Pawn
+
+    {}, // Knight
+
+    { NORTH_EAST, SOUTH_EAST, SOUTH_WEST, NORTH_WEST }, // Bishop
+
+    { NORTH,  EAST,  SOUTH,  WEST }, // Rook
+
+    { NORTH,  EAST,  SOUTH,  WEST, NORTH_EAST, SOUTH_EAST, SOUTH_WEST, NORTH_WEST }, // Queen
+
+    {}, // Cannon
+
+    { NORTH_EAST, SOUTH_EAST, SOUTH_WEST, NORTH_WEST }, // Leopard
+
+    { NORTH_EAST, SOUTH_EAST, SOUTH_WEST, NORTH_WEST }, // Archbishop
+
+    { NORTH,  EAST,  SOUTH,  WEST }, // Chancellor
+
+    { NORTH_EAST, SOUTH_EAST, SOUTH_WEST, NORTH_WEST }, // Spider
+
+    { NORTH,  EAST,  SOUTH,  WEST, NORTH_EAST, SOUTH_EAST, SOUTH_WEST, NORTH_WEST }, // Dragon
+
+    {}, // Unicorn
+
+    {}, // Hawk
+
+    {}, // Elephant
+
+    { NORTH_EAST, SOUTH_EAST, SOUTH_WEST, NORTH_WEST }, // Fortress
+
+    {} // King
+
+  };
+
+  int slider_dist[] = {
+
+    0, // NO_PIECE_TYPE
+
+    0, // Pawn
+
+    0, // Knight
+
+    7, // Bishop
+
+    7, // Rook
+
+    7, // Queen
+
+    0, // Cannon
+
+    2, // Leopard
+
+    7, // Archbishop
+
+    7, // Chancellor
+
+    2, // Spider
+
+    7, // Dragon
+
+    0, // Unicorn
+
+    0, // Hawk
+
+    0, // Elephant
+
+    3, // Fortress
+
+    0  // King
+
+  };
+
+
+
+  for (Color c = WHITE; c <= BLACK; ++c)
+
+      for (PieceType pt = PAWN; pt <= KING; ++pt)
+
+          for (Square s = SQ_A1; s <= SQ_H8; ++s)
+
+          {
+
+              for (int i = 0; steps[pt][i]; ++i)
+
+              {
+
+                  Square to = s + Direction(c == WHITE ? steps[pt][i] : -steps[pt][i]);
+
+
+
+                  if (is_ok(to) && distance(s, to) < 4)
+
+                  {
+
+                      PseudoAttacks[c][pt][s] |= to;
+
+                      LeaperAttacks[c][pt][s] |= to;
+
+                  }
+
+              }
+
+              PseudoAttacks[c][pt][s] |= sliding_attack(slider[pt], s, 0, slider_dist[pt]);
+
+          }
+
+
+
+  for (Square s1 = SQ_A1; s1 <= SQ_H8; ++s1)
+
+  {
+
+      for (PieceType pt : { BISHOP, ROOK })
+
+          for (Square s2 = SQ_A1; s2 <= SQ_H8; ++s2)
+
+          {
+
+              if (!(PseudoAttacks[WHITE][pt][s1] & s2))
+
+                  continue;
+
+
+
+              LineBB[s1][s2] = (attacks_bb(WHITE, pt, s1, 0) & attacks_bb(WHITE, pt, s2, 0)) | s1 | s2;
+
+              BetweenBB[s1][s2] = attacks_bb(WHITE, pt, s1, SquareBB[s2]) & attacks_bb(WHITE, pt, s2, SquareBB[s1]);
+
+          }
+
+  }
+
+}
+
+// End Musketeer Piece Moves
+
+
 
 
 namespace {
